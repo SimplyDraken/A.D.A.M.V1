@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
-from database import init_db, get_connection
-from rules import analyze_event
-from telegram_bot import send_telegram_message, send_alert_with_buttons
+from backend.database import init_db, get_connection
+from backend.rules import analyze_event
+from backend.telegram_bot import send_telegram_message, send_alert_with_buttons
 
 app = Flask(__name__)
 
