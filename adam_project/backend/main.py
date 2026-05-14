@@ -1,7 +1,7 @@
 from threading import Thread
 
-from backend.app import app
-from backend.adam_bot import run_bot
+from app import app
+from adam_bot import run_bot
 
 
 def start_flask():
