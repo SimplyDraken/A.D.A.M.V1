@@ -2,8 +2,8 @@ import os
 import time
 import requests
 from dotenv import load_dotenv
-from database import get_connection
-from telegram_bot import (
+from backend.database import get_connection
+from backend.telegram_bot import (
     answer_callback_query,
     send_telegram_message,
     edit_telegram_message_with_buttons,
