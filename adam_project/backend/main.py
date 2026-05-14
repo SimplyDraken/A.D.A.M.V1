@@ -1,5 +1,4 @@
 from threading import Thread
-
 from app import app
 from adam_bot import run_bot
 
