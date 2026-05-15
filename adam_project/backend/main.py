@@ -14,6 +14,6 @@ def start_telegram_bot():
 if __name__ == "__main__":
     bot_thread = Thread(target=start_telegram_bot)
     bot_thread.daemon = True
-    bot_thread.start()
+    ##bot_thread.start()
 
     start_flask()
