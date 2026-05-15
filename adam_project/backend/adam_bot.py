@@ -18,6 +18,10 @@ OWNER_CHAT_ID = str(os.getenv("CHAT_ID"))
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
+# =========================
+# TELEGRAM UI HELPERS
+# =========================
+
 def send_message_with_keyboard(chat_id, text, keyboard):
     url = f"{BASE_URL}/sendMessage"
 
@@ -31,8 +35,13 @@ def send_message_with_keyboard(chat_id, text, keyboard):
 
     response = requests.post(url, json=payload, timeout=15)
     response.raise_for_status()
+
     return response.json()
 
+
+# =========================
+# TELEGRAM UPDATE SYSTEM
+# =========================
 
 def get_updates(offset=None):
     url = f"{BASE_URL}/getUpdates"
@@ -44,11 +53,20 @@ def get_updates(offset=None):
     if offset:
         params["offset"] = offset
 
-    response = requests.get(url, params=params, timeout=35)
+    response = requests.get(
+        url,
+        params=params,
+        timeout=35
+    )
+
     response.raise_for_status()
 
     return response.json()
 
+
+# =========================
+# DATABASE HELPERS
+# =========================
 
 def get_alert_by_id(alert_id):
     conn = get_connection()
@@ -102,14 +120,24 @@ def get_status_summary():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) AS total FROM events")
+    cursor.execute(
+        "SELECT COUNT(*) AS total FROM events"
+    )
+
     total_events = cursor.fetchone()["total"]
 
-    cursor.execute("SELECT COUNT(*) AS total FROM alerts")
+    cursor.execute(
+        "SELECT COUNT(*) AS total FROM alerts"
+    )
+
     total_alerts = cursor.fetchone()["total"]
 
     cursor.execute(
-        "SELECT COUNT(*) AS total FROM alerts WHERE status = 'pending'"
+        """
+        SELECT COUNT(*) AS total
+        FROM alerts
+        WHERE status = 'pending'
+        """
     )
 
     pending_alerts = cursor.fetchone()["total"]
@@ -118,6 +146,10 @@ def get_status_summary():
 
     return total_events, total_alerts, pending_alerts
 
+
+# =========================
+# ALERT HELPERS
+# =========================
 
 def extract_alert_id(message_text):
     try:
@@ -138,6 +170,7 @@ def format_alert_card(
     basis=None,
     extra_line=None
 ):
+
     text = (
         f"🚨 A.D.A.M SECURITY ALERT #{alert_id}\n"
         "━━━━━━━━━━━━━━━\n\n"
@@ -168,7 +201,8 @@ def normalize_action(action):
         "override_alarm": "Override Alarm",
         "override_lockdown": "Override Lockdown",
         "mark_safe": "Mark Safe",
-        "shut_doors_and_trigger_fire_alarm": "Shut Doors And Trigger Fire Alarm",
+        "shut_doors_and_trigger_fire_alarm":
+            "Shut Doors And Trigger Fire Alarm",
         "advanced_locking": "Advanced Locking",
         "alert_owner": "Alert Owner"
     }
@@ -180,6 +214,7 @@ def normalize_action(action):
 
 
 def apply_action_transition(current_status, action):
+
     if current_status == "pending":
 
         if action in [
@@ -209,6 +244,7 @@ def apply_action_transition(current_status, action):
 
 
 def update_alert_status(alert_id, action):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -231,7 +267,6 @@ def update_alert_status(alert_id, action):
         return None
 
     previous_status = row["status"]
-    previous_action = row["chosen_action"]
     reason = row["alert_message"]
     telegram_message_id = row["telegram_message_id"]
 
@@ -246,7 +281,11 @@ def update_alert_status(alert_id, action):
         SET status = ?, chosen_action = ?
         WHERE id = ?
         """,
-        (new_status, final_action, alert_id)
+        (
+            new_status,
+            final_action,
+            alert_id
+        )
     )
 
     conn.commit()
@@ -256,63 +295,76 @@ def update_alert_status(alert_id, action):
         "alert_id": alert_id,
         "reason": reason,
         "telegram_message_id": telegram_message_id,
-        "previous_status": previous_status,
-        "previous_action": previous_action,
         "new_status": new_status,
         "new_action": final_action
     }
 
 
+# =========================
+# CONTROL PANEL
+# =========================
+
+def send_control_panel(chat_id):
+
+    keyboard = [
+        [
+            {
+                "text": "📊 Dashboard",
+                "callback_data": "dashboard"
+            },
+            {
+                "text": "🚨 Alerts",
+                "callback_data": "alerts"
+            }
+        ],
+        [
+            {
+                "text": "📡 Devices",
+                "callback_data": "devices"
+            },
+            {
+                "text": "🧠 Intelligence",
+                "callback_data": "intelligence"
+            }
+        ],
+        [
+            {
+                "text": "⚙️ Controls",
+                "callback_data": "controls"
+            }
+        ]
+    ]
+
+    send_message_with_keyboard(
+        chat_id,
+        (
+            "🤖 A.D.A.M SECURITY CORE\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "🟢 Core Status: ONLINE\n"
+            "⚠️ Threat Level: NORMAL\n"
+            "📡 Monitoring Active\n\n"
+            "A.D.A.M is actively supervising\n"
+            "your connected environment.\n\n"
+            "Select an interface module below."
+        ),
+        keyboard
+    )
+
+
+# =========================
+# COMMAND HANDLER
+# =========================
+
 def handle_command(chat_id, text):
 
     if str(chat_id) != OWNER_CHAT_ID:
-        send_telegram_message("Unauthorized operator.")
+        send_telegram_message(
+            "Unauthorized operator."
+        )
         return
 
     if text == "/start":
-
-        keyboard = [
-            [
-                {
-                    "text": "📊 System Status",
-                    "callback_data": "dashboard"
-                },
-                {
-                    "text": "🚨 Active Alerts",
-                    "callback_data": "alerts"
-                }
-            ],
-            [
-                {
-                    "text": "📡 Recent Events",
-                    "callback_data": "events"
-                },
-                {
-                    "text": "🧠 AI Decisions",
-                    "callback_data": "intelligence"
-                }
-            ],
-            [
-                {
-                    "text": "⚙️ Security Controls",
-                    "callback_data": "controls"
-                }
-            ]
-        ]
-
-        send_message_with_keyboard(
-            chat_id,
-            (
-                "🤖 A.D.A.M CONTROL PANEL\n"
-                "━━━━━━━━━━━━━━━\n\n"
-                "🟢 Core Status: ONLINE\n"
-                "⚠️ Threat Level: NORMAL\n\n"
-                "A.D.A.M is actively monitoring\n"
-                "your connected environment.\n\n"
-                "Select an operation below."
-            ),
-            keyboard
-        )
+        send_control_panel(chat_id)
 
     elif text == "/help":
 
@@ -330,11 +382,11 @@ def handle_command(chat_id, text):
         total_events, total_alerts, pending_alerts = get_status_summary()
 
         send_telegram_message(
-            "🧠 A.D.A.M SYSTEM STATUS\n"
+            "📊 SYSTEM STATUS\n"
             "━━━━━━━━━━━━━━━\n\n"
             "🟢 Core Status: ONLINE\n"
-            f"📡 Total Events: {total_events}\n"
-            f"🚨 Total Alerts: {total_alerts}\n"
+            f"📡 Events Logged: {total_events}\n"
+            f"🚨 Alerts Generated: {total_alerts}\n"
             f"🟡 Pending Alerts: {pending_alerts}\n\n"
             "🧠 Adaptive Monitoring Active"
         )
@@ -349,12 +401,14 @@ def handle_command(chat_id, text):
             )
 
         else:
+
             msg = (
                 "📡 RECENT EVENTS\n"
                 "━━━━━━━━━━━━━━━\n\n"
             )
 
             for r in rows:
+
                 msg += (
                     f"📍 {r['location']}\n"
                     f"📷 {r['sensor_type']}\n"
@@ -369,17 +423,20 @@ def handle_command(chat_id, text):
         rows = get_recent_alerts()
 
         if not rows:
+
             send_telegram_message(
                 "🟢 No active threats detected."
             )
 
         else:
+
             msg = (
                 "🚨 ACTIVE ALERTS\n"
                 "━━━━━━━━━━━━━━━\n\n"
             )
 
             for r in rows:
+
                 msg += (
                     f"🚨 Alert #{r['id']}\n"
                     f"📍 Status: {r['status'].upper()}\n"
@@ -389,29 +446,13 @@ def handle_command(chat_id, text):
 
             send_telegram_message(msg)
 
-    elif text == "/lastalert":
 
-        rows = get_recent_alerts(limit=1)
-
-        if not rows:
-            send_telegram_message(
-                "🟢 No recent alerts detected."
-            )
-
-        else:
-            r = rows[0]
-
-            send_telegram_message(
-                "🚨 LATEST ALERT\n"
-                "━━━━━━━━━━━━━━━\n\n"
-                f"📍 Alert ID: #{r['id']}\n"
-                f"🧠 Reason: {r['alert_message']}\n"
-                f"⚠️ Status: {r['status'].upper()}\n"
-                f"⚙️ Action: {r['chosen_action']}"
-            )
-
+# =========================
+# BOT RUNTIME
+# =========================
 
 def run_bot():
+
     print("A.D.A.M v1 is now live...")
 
     last_update_id = None
@@ -419,15 +460,21 @@ def run_bot():
     while True:
 
         try:
+
             updates = get_updates(last_update_id)
 
             if updates.get("ok"):
 
                 for item in updates.get("result", []):
 
-                    last_update_id = item["update_id"] + 1
+                    last_update_id = (
+                        item["update_id"] + 1
+                    )
 
+                    # =========================
                     # CALLBACK BUTTON HANDLING
+                    # =========================
+
                     if "callback_query" in item:
 
                         cq = item["callback_query"]
@@ -452,10 +499,15 @@ def run_bot():
 
                             continue
 
-                        # CONTROL PANEL BUTTONS
+                        # =========================
+                        # DASHBOARD
+                        # =========================
+
                         if action == "dashboard":
 
-                            total_events, total_alerts, pending_alerts = get_status_summary()
+                            total_events, total_alerts, pending_alerts = (
+                                get_status_summary()
+                            )
 
                             send_telegram_message(
                                 "📊 SYSTEM DASHBOARD\n"
@@ -474,54 +526,29 @@ def run_bot():
 
                             continue
 
-                        elif action == "events":
-
-                            rows = get_recent_events()
-
-                            if not rows:
-                                send_telegram_message(
-                                    "🟢 No recent events detected."
-                                )
-
-                            else:
-                                msg = (
-                                    "📡 RECENT EVENTS\n"
-                                    "━━━━━━━━━━━━━━━\n\n"
-                                )
-
-                                for r in rows:
-                                    msg += (
-                                        f"📍 {r['location']}\n"
-                                        f"📷 {r['sensor_type']}\n"
-                                        f"⚠️ Risk: {r['risk_level'].upper()}\n"
-                                        f"🕒 {r['timestamp']}\n\n"
-                                    )
-
-                                send_telegram_message(msg)
-
-                            answer_callback_query(
-                                callback_id,
-                                "Events loaded"
-                            )
-
-                            continue
+                        # =========================
+                        # ALERTS
+                        # =========================
 
                         elif action == "alerts":
 
                             rows = get_recent_alerts()
 
                             if not rows:
+
                                 send_telegram_message(
                                     "🟢 No active threats detected."
                                 )
 
                             else:
+
                                 msg = (
                                     "🚨 ACTIVE ALERTS\n"
                                     "━━━━━━━━━━━━━━━\n\n"
                                 )
 
                                 for r in rows:
+
                                     msg += (
                                         f"🚨 Alert #{r['id']}\n"
                                         f"📍 Status: {r['status'].upper()}\n"
@@ -538,6 +565,32 @@ def run_bot():
 
                             continue
 
+                        # =========================
+                        # DEVICES
+                        # =========================
+
+                        elif action == "devices":
+
+                            send_telegram_message(
+                                "📡 DEVICE CENTER\n"
+                                "━━━━━━━━━━━━━━━\n\n"
+                                "Connected Devices: 4\n\n"
+                                "📷 Cameras: 2\n"
+                                "🚪 Sensors: 2\n\n"
+                                "🟢 All monitored devices are operational."
+                            )
+
+                            answer_callback_query(
+                                callback_id,
+                                "Devices loaded"
+                            )
+
+                            continue
+
+                        # =========================
+                        # INTELLIGENCE
+                        # =========================
+
                         elif action == "intelligence":
 
                             send_telegram_message(
@@ -553,10 +606,14 @@ def run_bot():
 
                             answer_callback_query(
                                 callback_id,
-                                "Intelligence panel loaded"
+                                "Intelligence loaded"
                             )
 
                             continue
+
+                        # =========================
+                        # CONTROLS
+                        # =========================
 
                         elif action == "controls":
 
@@ -576,12 +633,18 @@ def run_bot():
 
                             continue
 
+                        # =========================
                         # ALERT ACTION HANDLING
-                        alert_id = extract_alert_id(message_text)
+                        # =========================
+
+                        alert_id = extract_alert_id(
+                            message_text
+                        )
 
                         result = None
 
                         if alert_id is not None:
+
                             result = update_alert_status(
                                 alert_id,
                                 action
@@ -605,11 +668,13 @@ def run_bot():
                             extra_line = None
 
                             if result["new_status"] == "auto_escalated":
+
                                 extra_line = (
                                     "🟠 Human override is still allowed."
                                 )
 
                             elif result["new_status"] == "closed":
+
                                 extra_line = (
                                     "🟢 Incident closed."
                                 )
@@ -634,14 +699,21 @@ def run_bot():
                                 )
 
                             except Exception as e:
-                                print("Edit message error:", e)
+
+                                print(
+                                    "Edit message error:",
+                                    e
+                                )
 
                             answer_callback_query(
                                 callback_id,
                                 f"{normalize_action(result['new_action'])} applied"
                             )
 
+                    # =========================
                     # COMMAND HANDLING
+                    # =========================
+
                     elif "message" in item:
 
                         msg = item["message"]
@@ -654,12 +726,18 @@ def run_bot():
                         ).strip().lower()
 
                         if text.startswith("/"):
-                            handle_command(chat_id, text)
+
+                            handle_command(
+                                chat_id,
+                                text
+                            )
 
             time.sleep(0.5)
 
         except Exception as e:
+
             print("Bot error:", e)
+
             time.sleep(2)
 
 
