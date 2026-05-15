@@ -8,6 +8,7 @@ from telegram_bot import (
     answer_callback_query,
     send_telegram_message,
     edit_telegram_message_with_buttons,
+    edit_menu_message
 )
 
 load_dotenv()
@@ -23,6 +24,7 @@ BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # =========================
 
 def send_message_with_keyboard(chat_id, text, keyboard):
+
     url = f"{BASE_URL}/sendMessage"
 
     payload = {
@@ -33,7 +35,12 @@ def send_message_with_keyboard(chat_id, text, keyboard):
         }
     }
 
-    response = requests.post(url, json=payload, timeout=15)
+    response = requests.post(
+        url,
+        json=payload,
+        timeout=15
+    )
+
     response.raise_for_status()
 
     return response.json()
@@ -44,6 +51,7 @@ def send_message_with_keyboard(chat_id, text, keyboard):
 # =========================
 
 def get_updates(offset=None):
+
     url = f"{BASE_URL}/getUpdates"
 
     params = {
@@ -68,23 +76,8 @@ def get_updates(offset=None):
 # DATABASE HELPERS
 # =========================
 
-def get_alert_by_id(alert_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM alerts WHERE id = ?",
-        (alert_id,)
-    )
-
-    row = cursor.fetchone()
-
-    conn.close()
-
-    return row
-
-
 def get_recent_events(limit=5):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -101,6 +94,7 @@ def get_recent_events(limit=5):
 
 
 def get_recent_alerts(limit=5):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -117,6 +111,7 @@ def get_recent_alerts(limit=5):
 
 
 def get_status_summary():
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -152,6 +147,7 @@ def get_status_summary():
 # =========================
 
 def extract_alert_id(message_text):
+
     try:
         first_line = message_text.splitlines()[0]
         return int(first_line.split("#")[1])
@@ -166,8 +162,6 @@ def format_alert_card(
     status,
     action,
     risk="HIGH",
-    confidence=None,
-    basis=None,
     extra_line=None
 ):
 
@@ -180,12 +174,6 @@ def format_alert_card(
         f"🧠 Reasoning:\n{reason}"
     )
 
-    if confidence is not None:
-        text += f"\n\n🧠 Confidence: {confidence}%"
-
-    if basis:
-        text += f"\n📡 Decision Basis: {basis}"
-
     if extra_line:
         text += f"\n\n{extra_line}"
 
@@ -193,6 +181,7 @@ def format_alert_card(
 
 
 def normalize_action(action):
+
     mapping = {
         "acknowledge": "Acknowledge",
         "trigger_alarm": "Trigger Alarm",
@@ -200,11 +189,7 @@ def normalize_action(action):
         "ignore": "Ignore",
         "override_alarm": "Override Alarm",
         "override_lockdown": "Override Lockdown",
-        "mark_safe": "Mark Safe",
-        "shut_doors_and_trigger_fire_alarm":
-            "Shut Doors And Trigger Fire Alarm",
-        "advanced_locking": "Advanced Locking",
-        "alert_owner": "Alert Owner"
+        "mark_safe": "Mark Safe"
     }
 
     return mapping.get(
@@ -226,7 +211,6 @@ def apply_action_transition(current_status, action):
             return "resolved", action
 
     elif current_status in [
-        "auto_escalated",
         "resolved",
         "overridden"
     ]:
@@ -251,7 +235,6 @@ def update_alert_status(alert_id, action):
     cursor.execute(
         """
         SELECT status,
-               chosen_action,
                alert_message,
                telegram_message_id
         FROM alerts
@@ -304,9 +287,9 @@ def update_alert_status(alert_id, action):
 # CONTROL PANEL
 # =========================
 
-def send_control_panel(chat_id):
+def get_home_keyboard():
 
-    keyboard = [
+    return [
         [
             {
                 "text": "📊 Dashboard",
@@ -335,6 +318,47 @@ def send_control_panel(chat_id):
         ]
     ]
 
+
+def get_navigation_keyboard():
+
+    return [
+        [
+            {
+                "text": "📊 Dashboard",
+                "callback_data": "dashboard"
+            },
+            {
+                "text": "🚨 Alerts",
+                "callback_data": "alerts"
+            }
+        ],
+        [
+            {
+                "text": "📡 Devices",
+                "callback_data": "devices"
+            },
+            {
+                "text": "🧠 Intelligence",
+                "callback_data": "intelligence"
+            }
+        ],
+        [
+            {
+                "text": "⚙️ Controls",
+                "callback_data": "controls"
+            }
+        ],
+        [
+            {
+                "text": "🏠 Home",
+                "callback_data": "home"
+            }
+        ]
+    ]
+
+
+def send_control_panel(chat_id):
+
     send_message_with_keyboard(
         chat_id,
         (
@@ -347,7 +371,7 @@ def send_control_panel(chat_id):
             "your connected environment.\n\n"
             "Select an interface module below."
         ),
-        keyboard
+        get_home_keyboard()
     )
 
 
@@ -358,93 +382,15 @@ def send_control_panel(chat_id):
 def handle_command(chat_id, text):
 
     if str(chat_id) != OWNER_CHAT_ID:
+
         send_telegram_message(
             "Unauthorized operator."
         )
+
         return
 
     if text == "/start":
         send_control_panel(chat_id)
-
-    elif text == "/help":
-
-        send_telegram_message(
-            "🧠 A.D.A.M OPERATOR GUIDE\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "/status → System overview\n"
-            "/events → Recent activity\n"
-            "/alerts → Threat alerts\n"
-            "/lastalert → Latest incident"
-        )
-
-    elif text == "/status":
-
-        total_events, total_alerts, pending_alerts = get_status_summary()
-
-        send_telegram_message(
-            "📊 SYSTEM STATUS\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "🟢 Core Status: ONLINE\n"
-            f"📡 Events Logged: {total_events}\n"
-            f"🚨 Alerts Generated: {total_alerts}\n"
-            f"🟡 Pending Alerts: {pending_alerts}\n\n"
-            "🧠 Adaptive Monitoring Active"
-        )
-
-    elif text == "/events":
-
-        rows = get_recent_events()
-
-        if not rows:
-            send_telegram_message(
-                "🟢 No recent events detected."
-            )
-
-        else:
-
-            msg = (
-                "📡 RECENT EVENTS\n"
-                "━━━━━━━━━━━━━━━\n\n"
-            )
-
-            for r in rows:
-
-                msg += (
-                    f"📍 {r['location']}\n"
-                    f"📷 {r['sensor_type']}\n"
-                    f"⚠️ Risk: {r['risk_level'].upper()}\n"
-                    f"🕒 {r['timestamp']}\n\n"
-                )
-
-            send_telegram_message(msg)
-
-    elif text == "/alerts":
-
-        rows = get_recent_alerts()
-
-        if not rows:
-
-            send_telegram_message(
-                "🟢 No active threats detected."
-            )
-
-        else:
-
-            msg = (
-                "🚨 ACTIVE ALERTS\n"
-                "━━━━━━━━━━━━━━━\n\n"
-            )
-
-            for r in rows:
-
-                msg += (
-                    f"🚨 Alert #{r['id']}\n"
-                    f"📍 Status: {r['status'].upper()}\n"
-                    f"🧠 Reason: {r['alert_message']}\n"
-                    f"⚙️ Action: {r['chosen_action']}\n\n"
-                )
-
-            send_telegram_message(msg)
 
 
 # =========================
@@ -472,7 +418,7 @@ def run_bot():
                     )
 
                     # =========================
-                    # CALLBACK BUTTON HANDLING
+                    # CALLBACK BUTTONS
                     # =========================
 
                     if "callback_query" in item:
@@ -483,6 +429,8 @@ def run_bot():
                         action = cq["data"]
 
                         message = cq["message"]
+
+                        message_id = message["message_id"]
 
                         message_text = message["text"]
 
@@ -500,23 +448,55 @@ def run_bot():
                             continue
 
                         # =========================
+                        # HOME
+                        # =========================
+
+                        if action == "home":
+
+                            edit_menu_message(
+                                message_id,
+                                (
+                                    "🤖 A.D.A.M SECURITY CORE\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
+                                    "🟢 Core Status: ONLINE\n"
+                                    "⚠️ Threat Level: NORMAL\n"
+                                    "📡 Monitoring Active\n\n"
+                                    "A.D.A.M is actively supervising\n"
+                                    "your connected environment.\n\n"
+                                    "Select an interface module below."
+                                ),
+                                get_home_keyboard()
+                            )
+
+                            answer_callback_query(
+                                callback_id,
+                                "Control panel loaded"
+                            )
+
+                            continue
+
+                        # =========================
                         # DASHBOARD
                         # =========================
 
-                        if action == "dashboard":
+                        elif action == "dashboard":
 
                             total_events, total_alerts, pending_alerts = (
                                 get_status_summary()
                             )
 
-                            send_telegram_message(
-                                "📊 SYSTEM DASHBOARD\n"
-                                "━━━━━━━━━━━━━━━\n\n"
-                                "🟢 Core Status: ONLINE\n"
-                                f"📡 Events Logged: {total_events}\n"
-                                f"🚨 Alerts Generated: {total_alerts}\n"
-                                f"🟡 Pending Alerts: {pending_alerts}\n\n"
-                                "🧠 Adaptive Intelligence Active"
+                            edit_menu_message(
+                                message_id,
+                                (
+                                    "📊 SYSTEM DASHBOARD\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
+                                    "🟢 Core Status: ONLINE\n"
+                                    f"📡 Events Logged: {total_events}\n"
+                                    f"🚨 Alerts Generated: {total_alerts}\n"
+                                    f"🟡 Pending Alerts: {pending_alerts}\n\n"
+                                    "🧠 Adaptive Intelligence Active"
+                                ),
+                                get_navigation_keyboard()
                             )
 
                             answer_callback_query(
@@ -536,27 +516,33 @@ def run_bot():
 
                             if not rows:
 
-                                send_telegram_message(
+                                alert_text = (
+                                    "🚨 ACTIVE ALERTS\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
                                     "🟢 No active threats detected."
                                 )
 
                             else:
 
-                                msg = (
+                                alert_text = (
                                     "🚨 ACTIVE ALERTS\n"
                                     "━━━━━━━━━━━━━━━\n\n"
                                 )
 
                                 for r in rows:
 
-                                    msg += (
+                                    alert_text += (
                                         f"🚨 Alert #{r['id']}\n"
                                         f"📍 Status: {r['status'].upper()}\n"
                                         f"🧠 Reason: {r['alert_message']}\n"
                                         f"⚙️ Action: {r['chosen_action']}\n\n"
                                     )
 
-                                send_telegram_message(msg)
+                            edit_menu_message(
+                                message_id,
+                                alert_text,
+                                get_navigation_keyboard()
+                            )
 
                             answer_callback_query(
                                 callback_id,
@@ -571,13 +557,17 @@ def run_bot():
 
                         elif action == "devices":
 
-                            send_telegram_message(
-                                "📡 DEVICE CENTER\n"
-                                "━━━━━━━━━━━━━━━\n\n"
-                                "Connected Devices: 4\n\n"
-                                "📷 Cameras: 2\n"
-                                "🚪 Sensors: 2\n\n"
-                                "🟢 All monitored devices are operational."
+                            edit_menu_message(
+                                message_id,
+                                (
+                                    "📡 DEVICE CENTER\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
+                                    "Connected Devices: 4\n\n"
+                                    "📷 Cameras: 2\n"
+                                    "🚪 Sensors: 2\n\n"
+                                    "🟢 All monitored devices are operational."
+                                ),
+                                get_navigation_keyboard()
                             )
 
                             answer_callback_query(
@@ -593,15 +583,19 @@ def run_bot():
 
                         elif action == "intelligence":
 
-                            send_telegram_message(
-                                "🧠 A.D.A.M INTELLIGENCE CORE\n"
-                                "━━━━━━━━━━━━━━━\n\n"
-                                "Adaptive behavioral monitoring is active.\n\n"
-                                "A.D.A.M is currently learning:\n"
-                                "• activity timing\n"
-                                "• device behavior\n"
-                                "• operational patterns\n"
-                                "• environmental deviations"
+                            edit_menu_message(
+                                message_id,
+                                (
+                                    "🧠 A.D.A.M INTELLIGENCE CORE\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
+                                    "Adaptive behavioral monitoring is active.\n\n"
+                                    "A.D.A.M is currently learning:\n"
+                                    "• activity timing\n"
+                                    "• device behavior\n"
+                                    "• operational patterns\n"
+                                    "• environmental deviations"
+                                ),
+                                get_navigation_keyboard()
                             )
 
                             answer_callback_query(
@@ -617,13 +611,17 @@ def run_bot():
 
                         elif action == "controls":
 
-                            send_telegram_message(
-                                "⚙️ SECURITY CONTROLS\n"
-                                "━━━━━━━━━━━━━━━\n\n"
-                                "🚨 Alarm Systems\n"
-                                "🔒 Lockdown Systems\n"
-                                "📡 Device Monitoring\n"
-                                "🧠 Adaptive Monitoring"
+                            edit_menu_message(
+                                message_id,
+                                (
+                                    "⚙️ SECURITY CONTROLS\n"
+                                    "━━━━━━━━━━━━━━━\n\n"
+                                    "🚨 Alarm Systems\n"
+                                    "🔒 Lockdown Systems\n"
+                                    "📡 Device Monitoring\n"
+                                    "🧠 Adaptive Monitoring"
+                                ),
+                                get_navigation_keyboard()
                             )
 
                             answer_callback_query(
@@ -634,7 +632,7 @@ def run_bot():
                             continue
 
                         # =========================
-                        # ALERT ACTION HANDLING
+                        # ALERT ACTIONS
                         # =========================
 
                         alert_id = extract_alert_id(
@@ -654,7 +652,6 @@ def run_bot():
 
                             if result["new_status"] in [
                                 "resolved",
-                                "auto_escalated",
                                 "overridden"
                             ]:
                                 button_mode = "override"
@@ -667,13 +664,7 @@ def run_bot():
 
                             extra_line = None
 
-                            if result["new_status"] == "auto_escalated":
-
-                                extra_line = (
-                                    "🟠 Human override is still allowed."
-                                )
-
-                            elif result["new_status"] == "closed":
+                            if result["new_status"] == "closed":
 
                                 extra_line = (
                                     "🟢 Incident closed."
